@@ -178,6 +178,6 @@ public class WebSpider {
         }
     }
     public static void main(String[] args) {
-        new WebSpider(50, "https://en.wikipedia.org/wiki/Sorting_algorithm", new String[] { "Monkey" });
+        new WebSpider(50, "", new String[] { "" });
     }
 }

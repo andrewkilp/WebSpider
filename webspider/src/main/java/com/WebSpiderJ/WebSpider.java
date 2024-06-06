@@ -61,7 +61,7 @@ public class WebSpider {
                 if(RobotTxtRules.containsKey(trimmedUrl))
                     throw new AlreadyExistsException();
                 ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>> agentRules = new ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>>();
-                RobotTxtRules.put(robotTxtString, agentRules);
+                RobotTxtRules.put(trimmedUrl, agentRules);
                 HttpGet checkForRobotsTxt = new HttpGet(robotTxtString);
                 HttpResponse requestRobotsTxt = httpClient.execute(checkForRobotsTxt);
                 HttpEntity robotsTxt = requestRobotsTxt.getEntity();

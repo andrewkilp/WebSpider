@@ -14,17 +14,20 @@ import org.jsoup.nodes.TextNode;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.net.URL;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class WebSpider {
     private Set<String> visitedLinks = new HashSet<>();
     private int maxDepth;
     private String[] keyWords;
+    private ConcurrentHashMap<String /*Domain*/, ConcurrentHashMap <String/*agent*/, ConcurrentHashMap<String/*ruleType*/, Vector<String>/*ruling*/>>> RobotTxtRules =new ConcurrentHashMap<>();
     private ConcurrentLinkedQueue<String> URLSWithKeyWords = new ConcurrentLinkedQueue<>();
+    String agentName = "*"; // defult for Robots.txt
     private Thread writer = new Thread(() -> {
         while (true) {
             if (!URLSWithKeyWords.isEmpty()) {
@@ -50,9 +53,78 @@ public class WebSpider {
         if (depth >= maxDepth || visitedLinks.contains(URL))
             return;
         visitedLinks.add(URL);
-        try (CloseableHttpClient httpClient = HttpClients.custom()
-                .setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build()).build();) {
+        try (CloseableHttpClient httpClient = HttpClients.custom().setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build()).build();) {
+            try { //Robots.txt script :/
+                URL urlToCheck = new URL(URL);
+                String trimmedUrl = urlToCheck.getProtocol() + "://" + urlToCheck.getHost();
+                String robotTxtString = trimmedUrl + "/robots.txt";
+                if(RobotTxtRules.containsKey(trimmedUrl))
+                    throw new AlreadyExistsException();
+                ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>> agentRules = new ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>>();
+                RobotTxtRules.put(robotTxtString, agentRules);
+                HttpGet checkForRobotsTxt = new HttpGet(robotTxtString);
+                HttpResponse requestRobotsTxt = httpClient.execute(checkForRobotsTxt);
+                HttpEntity robotsTxt = requestRobotsTxt.getEntity();
+                if (robotsTxt != null) {
+                    Document rbtTxt = Jsoup.parse(robotsTxt.getContent(), "UTF-8", robotTxtString);
+                    Elements elements = rbtTxt.getAllElements();
+                    for (Element element : elements) {
+                        for (TextNode textNode : element.textNodes()) {
+                            String rules = textNode.text();
+                            Scanner scanner = new Scanner(rules);
+                            String currentAgent = "*";
+                            while(scanner.hasNextLine()) {
+                                String line = scanner.nextLine();
+                                if(line.isEmpty() || line.startsWith("#")) 
+                                    continue;
+                                String[] partsInText = line.split(":", 2);
+                                if(partsInText.length < 2)
+                                    continue;
+                                String rule = partsInText[0].trim().toLowerCase();
+                                String val = partsInText[1].trim();
+                                switch (rule) {
+                                    case "user-agent" ->{
+                                        currentAgent = val.toLowerCase();
+                                        agentRules.putIfAbsent(currentAgent, new ConcurrentHashMap<String, Vector<String>>());
+                                        agentRules.get(currentAgent).putIfAbsent("disallow", new Vector<>());
+                                        agentRules.get(currentAgent).putIfAbsent("allow", new Vector<>());
+                                        agentRules.get(currentAgent).putIfAbsent("crawl-delay", new Vector<>());
+                                    }
+                                    case "disallow" ->{
+                                        agentRules.get(currentAgent).get("disallow").add(val);
+                                    }
+                                    case "allow" ->{
+                                        agentRules.get(currentAgent).get("allow").add(val);
+                                    }
+                                    case "crawl-delay" ->{
+                                        agentRules.get(currentAgent).get("crawl-delay").add(val);
+                                    }
+                                }
+                            }
+                            scanner.close();
+                        }
+                    }
+                } 
+            } catch (AlreadyExistsException e) {
+                System.out.println("URL\n\n\n\n\\n\n");
+            }catch(IllegalArgumentException e) {}
             HttpGet request = new HttpGet(URL);
+            URL urlForRobotsTxtRef = new URL(URL);
+            String host = urlForRobotsTxtRef.getProtocol() + "://" + urlForRobotsTxtRef.getHost();
+            ConcurrentHashMap<String, Vector<String>> rules;
+            int crawlTime = 0;
+            try{
+                rules = RobotTxtRules.get(host).get("*");
+                try {
+                    crawlTime = Integer.parseInt(rules.get("crawl-delay").get(0));
+                } catch(NumberFormatException e) {}
+                Vector<String> dissallowedDirs = rules.get("disallowed");
+                for(String dir: dissallowedDirs){
+                    if(URL.equals(host+dir))
+                        return;
+                }
+            } catch (NullPointerException e){}
+            
             HttpResponse response = httpClient.execute(request);
             HttpEntity entity = response.getEntity();
             if (entity != null) {
@@ -60,9 +132,9 @@ public class WebSpider {
                 Elements links = doc.select("a[href]");
                 if (doc.hasText()) {
                     new Thread(new WordChecker(doc, URL)).start();
-                    ;
                 }
                 for (Element link : links) {
+                    Thread.sleep(crawlTime*1000);
                     String nextLink = link.absUrl("href");
                     if (nextLink.startsWith("http")) {
                         new Thread(() -> {
@@ -73,9 +145,10 @@ public class WebSpider {
             }
         } catch (IOException ex) {
             System.out.println("failed to connect to " + URL);
-        } catch (IllegalArgumentException ex) {
-
-        }
+        } 
+        catch (IllegalArgumentException ex) {} 
+        catch(InterruptedException e){}
+        catch(NullPointerException e) {}
     }
     private class WordChecker implements Runnable {
         Document doc;
@@ -99,7 +172,12 @@ public class WebSpider {
             }
         }
     }
+    private class AlreadyExistsException extends Exception {
+        public AlreadyExistsException() {
+            super();
+        }
+    }
     public static void main(String[] args) {
-        new WebSpider(50, "", new String[] { "" });
+        new WebSpider(50, "https://en.wikipedia.org/wiki/Sorting_algorithm", new String[] { "Monkey" });
     }
 }

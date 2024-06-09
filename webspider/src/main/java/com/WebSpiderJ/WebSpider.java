@@ -48,7 +48,6 @@ public class WebSpider {
     });
     private Thread checkURLs = new Thread(()->{
         while(true) {
-            System.out.println(sitesToCheck.size());
             for(int i = 0; i<webSitesPerSecond;i++){
                 if (!sitesToCheck.isEmpty()) {
                     sitesToCheck.poll().start();

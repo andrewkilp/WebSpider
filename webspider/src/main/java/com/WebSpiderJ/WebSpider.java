@@ -29,6 +29,9 @@ public class WebSpider {
     private ConcurrentHashMap<String /*Domain*/, ConcurrentHashMap <String/*agent*/, ConcurrentHashMap<String/*ruleType*/, Vector<String>/*ruling*/>>> RobotTxtRules =new ConcurrentHashMap<>();
     private ConcurrentLinkedQueue<String> URLSWithKeyWords = new ConcurrentLinkedQueue<>();
     String agentName = "*"; // defult for Robots.txt
+    private ConcurrentLinkedQueue<Thread> sitesToCheck = new ConcurrentLinkedQueue<>();
+    private int webSitesPerSecond;
+    private boolean limitedRequestsPerSecond = false;
     private Thread writer = new Thread(() -> {
         while (true) {
             if (!URLSWithKeyWords.isEmpty()) {
@@ -43,6 +46,30 @@ public class WebSpider {
             }
         }
     });
+    private Thread checkURLs = new Thread(()->{
+        while(true) {
+            System.out.println(sitesToCheck.size());
+            for(int i = 0; i<webSitesPerSecond;i++){
+                if (!sitesToCheck.isEmpty()) {
+                    sitesToCheck.poll().start();
+                }
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {}
+        }
+    });
+    public WebSpider(int maxDepth, String URL, String[] keyWords, int webSitesPerSecond){
+        this.keyWords = keyWords;
+        this.maxDepth = maxDepth;
+        this.webSitesPerSecond = webSitesPerSecond;
+
+        limitedRequestsPerSecond = true;
+        checkURLs.start();
+        writer.start();
+        crawl(0, URL);
+    }
+
     public WebSpider(int maxDepth, String URL, String[] keyWords) {
         this.keyWords = keyWords;
         this.maxDepth = maxDepth;
@@ -97,9 +124,15 @@ public class WebSpider {
                     Thread.sleep(crawlTime*1000);
                     String nextLink = link.absUrl("href");
                     if (nextLink.startsWith("http")) {
-                        new Thread(() -> {
+                        if(!limitedRequestsPerSecond) {
+                            new Thread(() -> {
+                                crawl(depth + 1, nextLink); // remove +1 so it never ends
+                            }).start();
+                            return;
+                        }
+                        sitesToCheck.add(new Thread(() -> {
                             crawl(depth + 1, nextLink); // remove +1 so it never ends
-                        }).start();
+                        }));
                     }
                 }
             }
@@ -175,6 +208,7 @@ public class WebSpider {
                         if (text.contains(keyWord)) {
                             URLSWithKeyWords.add(String.format("%s contains %s%n", URL, keyWord));
                             System.out.println(String.format("%s contains %s", URL, keyWord));
+                            return;
                         }
                     }
                 }
@@ -182,6 +216,10 @@ public class WebSpider {
         }
     }
     public static void main(String[] args) {
-        new WebSpider(50, "https://en.wikipedia.org/wiki/Sorting_algorithm", new String[] { "Monkey" });
+         /* How to use
+            for Limited webSites/second do
+                new WebSpider(50, "https://en.wikipedia.org/wiki/Sorting_algorithm", new String[] { "" },100);
+            for Unlimited remove the number at the end
+        */
     }
 }

@@ -143,7 +143,6 @@ public class WebSpider {
             String robotTxtString = trimmedUrl + "/robots.txt";
             if(RobotTxtRules.containsKey(trimmedUrl))
                 return;
-            
             ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>> agentRules = new ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>>();
             RobotTxtRules.put(trimmedUrl, agentRules);
             HttpGet checkForRobotsTxt = new HttpGet(robotTxtString);
@@ -153,43 +152,46 @@ public class WebSpider {
                 Document rbtTxt = Jsoup.parse(robotsTxt.getContent(), "UTF-8", robotTxtString);
                 Elements elements = rbtTxt.getAllElements();
                 for (Element element : elements) {
-                    for (TextNode textNode : element.textNodes()) {
-                        String rules = textNode.text();
-                        Scanner scanner = new Scanner(rules);
-                        String currentAgent = "*";
-                        while(scanner.hasNextLine()) {
-                            String line = scanner.nextLine();
-                            if(line.isEmpty() || line.startsWith("#")) 
-                                continue;
-                            String[] partsInText = line.split(":", 2);
-                            if(partsInText.length < 2)
-                                continue;
-                            String rule = partsInText[0].trim().toLowerCase();
-                            String val = partsInText[1].trim();
-                            switch (rule) {
-                                case "user-agent" ->{
-                                    currentAgent = val.toLowerCase();
-                                    agentRules.putIfAbsent(currentAgent, new ConcurrentHashMap<String, Vector<String>>());
-                                    agentRules.get(currentAgent).putIfAbsent("disallow", new Vector<>());
-                                    agentRules.get(currentAgent).putIfAbsent("allow", new Vector<>());
-                                    agentRules.get(currentAgent).putIfAbsent("crawl-delay", new Vector<>());
-                                }
-                                case "disallow" ->{
-                                    agentRules.get(currentAgent).get("disallow").add(val);
-                                }
-                                case "allow" ->{
-                                    agentRules.get(currentAgent).get("allow").add(val);
-                                }
-                                case "crawl-delay" ->{
-                                    agentRules.get(currentAgent).get("crawl-delay").add(val);
-                                }
-                            }
-                        }
-                        scanner.close();
-                    }
+                    parseRobot(agentRules, element);
                 }
             } 
         }catch(IllegalArgumentException e) {}
+    }
+    private void parseRobot(ConcurrentHashMap<String, ConcurrentHashMap<String, Vector<String>>> agentRules, Element element) {
+        for (TextNode textNode : element.textNodes()) {
+            String rules = textNode.text();
+            Scanner scanner = new Scanner(rules);
+            String currentAgent = "*";
+            while(scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if(line.isEmpty() || line.startsWith("#")) 
+                    continue;
+                String[] partsInText = line.split(":", 2);
+                if(partsInText.length < 2)
+                    continue;
+                String rule = partsInText[0].trim().toLowerCase();
+                String val = partsInText[1].trim();
+                switch (rule) {
+                    case "user-agent" ->{
+                        currentAgent = val.toLowerCase();
+                        agentRules.putIfAbsent(currentAgent, new ConcurrentHashMap<String, Vector<String>>());
+                        agentRules.get(currentAgent).putIfAbsent("disallow", new Vector<>());
+                        agentRules.get(currentAgent).putIfAbsent("allow", new Vector<>());
+                        agentRules.get(currentAgent).putIfAbsent("crawl-delay", new Vector<>());
+                    }
+                    case "disallow" ->{
+                        agentRules.get(currentAgent).get("disallow").add(val);
+                    }
+                    case "allow" ->{
+                        agentRules.get(currentAgent).get("allow").add(val);
+                    }
+                    case "crawl-delay" ->{
+                        agentRules.get(currentAgent).get("crawl-delay").add(val);
+                    }
+                }
+            }
+            scanner.close();
+        }
     }
     private class WordChecker implements Runnable {
         Document doc;
